@@ -53,7 +53,7 @@ func TestInfoShort(t *testing.T) {
 
 	result := info.Short()
 
-	if result != "x402-buyer-client 1.0.0" {
-		t.Errorf("Short() = %q, want %q", result, "x402-buyer-client 1.0.0")
+	if result != "x402-go-client-example 1.0.0" {
+		t.Errorf("Short() = %q, want %q", result, "x402-go-client-example 1.0.0")
 	}
 }

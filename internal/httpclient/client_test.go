@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bane-labs-org/x402-buyer-client-go/internal/logging"
-	"github.com/bane-labs-org/x402-buyer-client-go/internal/payment/policy"
-	"github.com/bane-labs-org/x402-buyer-client-go/internal/x402adapter"
+	"github.com/bane-labs-org/x402-go-client-example/internal/logging"
+	"github.com/bane-labs-org/x402-go-client-example/internal/payment/policy"
+	"github.com/bane-labs-org/x402-go-client-example/internal/x402adapter"
 )
 
 // v1Body is the legacy 402 body shape the SDK's HTTPClient parses.

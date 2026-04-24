@@ -9,7 +9,7 @@ package signer
 import (
 	"errors"
 
-	"github.com/bane-labs-org/x402-buyer-client-go/internal/x402adapter"
+	"github.com/bane-labs-org/x402-go-client-example/internal/x402adapter"
 )
 
 // Signer is the minimal contract the CLI needs: a human-readable address

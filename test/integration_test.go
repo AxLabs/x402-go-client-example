@@ -1,4 +1,4 @@
-// Package test contains integration-style tests for the x402 buyer client.
+// Package test contains integration-style tests for the x402 client example.
 //
 // These tests spin up an httptest server that speaks the x402 wire protocol
 // (v1 body form, which is the most widely interoperable shape) and exercise
@@ -14,10 +14,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bane-labs-org/x402-buyer-client-go/internal/httpclient"
-	"github.com/bane-labs-org/x402-buyer-client-go/internal/logging"
-	"github.com/bane-labs-org/x402-buyer-client-go/internal/payment/policy"
-	"github.com/bane-labs-org/x402-buyer-client-go/internal/x402adapter"
+	"github.com/bane-labs-org/x402-go-client-example/internal/httpclient"
+	"github.com/bane-labs-org/x402-go-client-example/internal/logging"
+	"github.com/bane-labs-org/x402-go-client-example/internal/payment/policy"
+	"github.com/bane-labs-org/x402-go-client-example/internal/x402adapter"
 )
 
 // v1Accepts mirrors the SDK's types.PaymentRequirementsV1 JSON shape.

@@ -20,9 +20,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bane-labs-org/x402-buyer-client-go/internal/logging"
-	"github.com/bane-labs-org/x402-buyer-client-go/internal/payment/policy"
-	"github.com/bane-labs-org/x402-buyer-client-go/internal/x402adapter"
+	"github.com/bane-labs-org/x402-go-client-example/internal/logging"
+	"github.com/bane-labs-org/x402-go-client-example/internal/payment/policy"
+	"github.com/bane-labs-org/x402-go-client-example/internal/x402adapter"
 )
 
 // Client is a payment-aware HTTP client.

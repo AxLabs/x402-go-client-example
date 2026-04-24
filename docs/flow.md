@@ -1,6 +1,6 @@
 # x402 Payment Flow
 
-This document explains the detailed flow of the x402 payment protocol from the buyer/client perspective.
+This document explains the detailed x402 flow from the client example perspective (used with x402-go-server-example).
 
 ## Protocol Overview
 

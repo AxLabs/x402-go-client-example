@@ -38,7 +38,7 @@ func Get() Info {
 // String returns a human-readable version string.
 func (i Info) String() string {
 	return fmt.Sprintf(
-		"x402-buyer-client %s (commit: %s, built: %s, %s %s/%s)",
+		"x402-go-client-example %s (commit: %s, built: %s, %s %s/%s)",
 		i.Version,
 		i.Commit,
 		i.BuildTime,
@@ -50,5 +50,5 @@ func (i Info) String() string {
 
 // Short returns a short version string.
 func (i Info) Short() string {
-	return fmt.Sprintf("x402-buyer-client %s", i.Version)
+	return fmt.Sprintf("x402-go-client-example %s", i.Version)
 }

@@ -1,4 +1,4 @@
-// Package cli implements the command-line interface for the x402 buyer client.
+// Package cli implements the command-line interface for the x402 client example.
 package cli
 
 import (
@@ -10,13 +10,13 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/bane-labs-org/x402-buyer-client-go/internal/config"
-	"github.com/bane-labs-org/x402-buyer-client-go/internal/httpclient"
-	"github.com/bane-labs-org/x402-buyer-client-go/internal/logging"
-	"github.com/bane-labs-org/x402-buyer-client-go/internal/payment/policy"
-	"github.com/bane-labs-org/x402-buyer-client-go/internal/signer"
-	"github.com/bane-labs-org/x402-buyer-client-go/internal/version"
-	"github.com/bane-labs-org/x402-buyer-client-go/internal/x402adapter"
+	"github.com/bane-labs-org/x402-go-client-example/internal/config"
+	"github.com/bane-labs-org/x402-go-client-example/internal/httpclient"
+	"github.com/bane-labs-org/x402-go-client-example/internal/logging"
+	"github.com/bane-labs-org/x402-go-client-example/internal/payment/policy"
+	"github.com/bane-labs-org/x402-go-client-example/internal/signer"
+	"github.com/bane-labs-org/x402-go-client-example/internal/version"
+	"github.com/bane-labs-org/x402-go-client-example/internal/x402adapter"
 )
 
 // App holds the CLI application state.
@@ -41,7 +41,7 @@ func (a *App) Execute() error { return a.buildRootCommand().Execute() }
 func (a *App) buildRootCommand() *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:   "x402-client",
-		Short: "x402 Payment Protocol Buyer Client (powered by the official x402 Go SDK)",
+		Short: "x402 Payment Protocol Client Example (powered by the official x402 Go SDK)",
 		Long: `A buyer/caller for the x402 payment flow built on top of the official
 x402 Go SDK (github.com/x402-foundation/x402/go).
 

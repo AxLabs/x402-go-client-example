@@ -1,12 +1,12 @@
 # Architecture
 
-This document describes the architecture and design decisions of the x402-buyer-client-go.
+This document describes the architecture and design decisions of the x402-go-client-example (the client-side example paired with x402-go-server-example).
 
 ## Overview
 
 The client is structured as a modular Go application with clear separation of concerns:
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────┐
 │                           CLI Layer                                  │
 │                       (cmd/client, cli/)                            │

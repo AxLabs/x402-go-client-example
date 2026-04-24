@@ -1,4 +1,4 @@
-module github.com/bane-labs-org/x402-buyer-client-go
+module github.com/bane-labs-org/x402-go-client-example
 
 go 1.24.0
 
