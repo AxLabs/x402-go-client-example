@@ -38,7 +38,7 @@ func newV1Body() v1Body {
 		Error:       "Payment Required",
 		Accepts: []v1Accepts{{
 			Scheme:            "exact",
-			Network:           "base-sepolia",
+			Network:           "eip155:84532",
 			MaxAmountRequired: "100000",
 			Resource:          "/paid/hello",
 			Description:       "Test",

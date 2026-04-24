@@ -62,6 +62,7 @@ func NewEVMSignerFromPrivateKey(privateKeyHex string) (EVMSigner, error) {
 type Adapter struct {
 	client     *x402.X402Client
 	httpClient *x402http.HTTPClient
+	hasSigner  bool
 }
 
 // NewForEVM builds an Adapter configured for the EVM "exact" scheme on any
@@ -71,12 +72,14 @@ type Adapter struct {
 // inspect / no-pay code paths) but will refuse to create payment payloads.
 func NewForEVM(signer EVMSigner) *Adapter {
 	c := x402.Newx402Client()
-	if signer != nil {
-		c.Register("eip155:*", exactevm.NewExactEvmScheme(signer, nil))
-	}
+	// Register the scheme even without a signer so the SDK can still select
+	// compatible requirements for inspect / no-pay / dry-run / policy flows.
+	// Actual payload creation is guarded in CreateAndEncodePayment.
+	c.Register("eip155:*", exactevm.NewExactEvmScheme(signer, nil))
 	return &Adapter{
 		client:     c,
 		httpClient: x402http.Newx402HTTPClient(c),
+		hasSigner:  signer != nil,
 	}
 }
 
@@ -104,6 +107,9 @@ func (a *Adapter) CreateAndEncodePayment(
 	pr PaymentRequired,
 	reqs Requirements,
 ) (PaymentPayload, map[string]string, error) {
+	if !a.hasSigner {
+		return PaymentPayload{}, nil, fmt.Errorf("sdk signer not configured")
+	}
 	payload, err := a.client.CreatePaymentPayload(ctx, reqs, pr.Resource, pr.Extensions)
 	if err != nil {
 		return PaymentPayload{}, nil, fmt.Errorf("sdk create payment payload: %w", err)

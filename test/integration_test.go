@@ -45,7 +45,7 @@ func defaultV1() v1Body {
 		Error:       "Payment Required",
 		Accepts: []v1Accepts{{
 			Scheme:            "exact",
-			Network:           "base-sepolia",
+			Network:           "eip155:84532",
 			MaxAmountRequired: "100000",
 			Resource:          "/paid/hello",
 			Description:       "Test",
@@ -167,8 +167,7 @@ func TestIntegration_ChainRestriction(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	// The SDK normalises V1 "base-sepolia" to itself when building V2-shaped
-	// requirements for the caller. We explicitly disallow it.
+	// The requirements network is "eip155:84532". We explicitly disallow it.
 	strict := &policy.Policy{
 		AllowedChainIDs: []string{"eip155:1"},
 		AllowedSchemes:  []string{"exact"},

@@ -24,6 +24,9 @@ Thumbs.db
 
 # Go
 vendor/
+.cache/
 
 # Binary
 x402-client
+
+.instructions/
