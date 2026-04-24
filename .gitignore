@@ -1,0 +1,29 @@
+# Ignore environment file (may contain secrets)
+.env
+
+# Build artifacts
+/build/
+/dist/
+
+# Test artifacts
+coverage.out
+coverage.html
+*.test
+*.out
+
+# IDE / Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Go
+vendor/
+
+# Binary
+x402-client
