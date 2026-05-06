@@ -14,6 +14,7 @@ import (
 	"github.com/bane-labs-org/x402-go-client-example/internal/httpclient"
 	"github.com/bane-labs-org/x402-go-client-example/internal/logging"
 	"github.com/bane-labs-org/x402-go-client-example/internal/payment/policy"
+	"github.com/bane-labs-org/x402-go-client-example/internal/payment/selection"
 	"github.com/bane-labs-org/x402-go-client-example/internal/signer"
 	"github.com/bane-labs-org/x402-go-client-example/internal/version"
 	"github.com/bane-labs-org/x402-go-client-example/internal/x402adapter"
@@ -197,14 +198,25 @@ func (a *App) executeRequest(method, url string, body []byte) error {
 	)
 	a.printInfo("Policy", pol.String())
 
+	// Build option selector with preferences.
+	prefs := selection.Preferences{
+		Networks:        a.config.PreferredNetworks,
+		Assets:          a.config.PreferredAssets,
+		TransferMethods: a.config.PreferredTransferMethods,
+	}
+	strat := selection.ParseStrategy(a.config.SelectionStrategy)
+	sel := selection.NewSelector(pol, prefs, strat)
+	a.printInfo("Selection Strategy", string(strat))
+
 	// Build orchestrator.
 	client := httpclient.New(httpclient.Options{
-		Timeout: a.timeout,
-		Adapter: adapter,
-		Policy:  pol,
-		Logger:  a.logger,
-		DryRun:  a.dryRun || a.config.DryRun,
-		NoPay:   a.noPay || a.config.NoPay,
+		Timeout:  a.timeout,
+		Adapter:  adapter,
+		Policy:   pol,
+		Selector: sel,
+		Logger:   a.logger,
+		DryRun:   a.dryRun || a.config.DryRun,
+		NoPay:    a.noPay || a.config.NoPay,
 	})
 
 	a.printStep("Making initial request")
@@ -247,7 +259,30 @@ func (a *App) displayResult(result *httpclient.RequestResult) {
 
 	if result.PaymentRequired {
 		a.printStep("Received 402 Payment Required")
-		if result.Requirements != nil {
+
+		// Show all offered options.
+		if len(result.AllAccepts) > 0 {
+			fmt.Printf("    Offered options: %d\n", len(result.AllAccepts))
+			for i, acc := range result.AllAccepts {
+				fmt.Printf("      [%d] scheme=%s network=%s asset=%s amount=%s\n",
+					i, acc.Scheme, acc.Network, acc.Asset, acc.Amount)
+			}
+		}
+
+		// Show selection result.
+		if result.SelectionResult != nil {
+			if result.Requirements != nil {
+				fmt.Printf("    Selected option [%d]:\n", result.SelectionResult.SelectedIndex)
+				fmt.Println(httpclient.FormatRequirements(result.Requirements))
+			} else {
+				fmt.Println("    No acceptable option found.")
+			}
+			// Show rejections.
+			for _, rej := range result.SelectionResult.Rejected {
+				fmt.Printf("    Rejected [%d] (%s): %s\n",
+					rej.Index, rej.Requirements.Network, rej.Reason)
+			}
+		} else if result.Requirements != nil {
 			fmt.Println(httpclient.FormatRequirements(result.Requirements))
 		}
 	}

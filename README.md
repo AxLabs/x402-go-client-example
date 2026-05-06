@@ -8,9 +8,10 @@ Use both repos together to run a complete local example of `402 Payment Required
 ## What This Example Shows
 
 - Calling a protected endpoint
-- Handling `402 Payment Required`
+- Handling `402 Payment Required` (single and multi-option responses)
 - Parsing payment requirements
-- Applying local payment policy checks
+- Evaluating multiple payment options with configurable selection strategy
+- Applying local payment policy checks per candidate
 - Creating payment headers via the official x402 Go SDK
 - Retrying the request with payment headers
 
@@ -108,11 +109,36 @@ go run ./cmd/client version
 | `CLIENT_PRIVATE_KEY` | EVM private key for signing | - |
 | `CLIENT_MAX_AMOUNT` | Max allowed payment amount (smallest unit) | `1000000` |
 | `CLIENT_ALLOWED_ASSET` | Comma-separated allowlist of assets | - |
-| `CLIENT_ALLOWED_CHAIN_ID` | Allowed chain/network ID | - |
+| `CLIENT_ALLOWED_CHAIN_ID` | Allowed chain/network ID (CAIP-2 or numeric) | - |
 | `CLIENT_ALLOWED_PAY_TO` | Comma-separated allowlist of recipients | - |
+| `CLIENT_PREFERRED_NETWORKS` | CAIP-2 preferred networks, comma-separated | - |
+| `CLIENT_PREFERRED_ASSETS` | Preferred asset addresses, comma-separated | - |
+| `CLIENT_PREFERRED_TRANSFER_METHODS` | Preferred methods (`eip3009`, `permit2`) | - |
+| `CLIENT_SELECTION_STRATEGY` | `server-order` or `preference-first` | `server-order` |
 | `CLIENT_TIMEOUT` | HTTP timeout | `30s` |
 | `CLIENT_DRY_RUN` | Parse 402 but do not sign/retry | `false` |
 | `CLIENT_NO_PAY` | Never attempt payment flow | `false` |
+
+### Multi-Option Selection
+
+When a server returns multiple payment options in its `402 Payment Required` response (via the `accepts` array), the client evaluates **all** options against local policy and selects the best acceptable one.
+
+**Selection strategies:**
+
+- `server-order` (default): Evaluate options in the server-provided order; select the first that passes policy. Backward compatible with single-option servers.
+- `preference-first`: Reorder candidates by preference score (network > asset > transfer method) before applying policy. Useful when you want to prefer e.g., Neo X xGAS over Base Sepolia USDC.
+
+**Example: Prefer Neo X xGAS**
+
+```bash
+CLIENT_PREFERRED_NETWORKS=eip155:47763
+CLIENT_PREFERRED_ASSETS=0xABCDEF0000000000000000000000000000000001
+CLIENT_SELECTION_STRATEGY=preference-first
+```
+
+**Diagnostics:** The client logs all offered options, the selected option, and per-option rejection reasons for any rejected candidates. Use `--verbose` or `CLIENT_LOG_LEVEL=debug` to see full details.
+
+**CAIP-2 normalization:** Bare numeric chain IDs (e.g., `84532`) are automatically converted to CAIP-2 format (`eip155:84532`) in both `CLIENT_ALLOWED_CHAIN_ID` and `CLIENT_PREFERRED_NETWORKS`.
 
 ## CLI
 

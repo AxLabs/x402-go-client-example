@@ -22,23 +22,39 @@ At this point, no payment headers are included.
 
 ### Step 2: Server Returns 402
 
-The server responds with HTTP 402 and payment requirements:
+The server responds with HTTP 402 and payment requirements. The response may
+include one or more payment options in the `accepts` array:
 
 ```http
 HTTP/1.1 402 Payment Required
 Content-Type: application/json
-X-Payment-Requirements: {...}
+PAYMENT-REQUIRED: <base64-encoded payment requirements>
 
 {
+  "x402Version": 1,
   "error": "Payment Required",
-  "paymentRequirements": {
-    "scheme": "exact",
-    "network": "84532",
-    "maxAmountRequired": "100000",
-    "resource": "/paid/hello",
-    "description": "Access to hello endpoint",
-    "payTo": "0x1234567890123456789012345678901234567890"
-  }
+  "accepts": [
+    {
+      "scheme": "exact",
+      "network": "eip155:84532",
+      "maxAmountRequired": "100000",
+      "resource": "/paid/hello",
+      "description": "Pay with USDC on Base Sepolia",
+      "payTo": "0x1234567890123456789012345678901234567890",
+      "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+      "maxTimeoutSeconds": 300
+    },
+    {
+      "scheme": "exact",
+      "network": "eip155:47763",
+      "maxAmountRequired": "50000",
+      "resource": "/paid/hello",
+      "description": "Pay with xGAS on Neo X",
+      "payTo": "0x2222222222222222222222222222222222222222",
+      "asset": "0xABCDEF0000000000000000000000000000000001",
+      "maxTimeoutSeconds": 300
+    }
+  ]
 }
 ```
 
@@ -56,17 +72,26 @@ X-Payment-Requirements: {...}
 ### Step 3: Client Parses Requirements
 
 The client extracts payment requirements from either:
-1. The `X-Payment-Requirements` header (preferred)
-2. The response body's `paymentRequirements` field
+1. The `PAYMENT-REQUIRED` header (base64-encoded, preferred in v2)
+2. The response body's `accepts` array (v1 form)
 
-```go
-// From header
-req, err := model.ParsePaymentRequirementsFromHeader(headerValue)
+The SDK handles both formats transparently.
 
-// From body
-resp, err := model.Parse402Response(body)
-req := resp.PaymentRequirements
-```
+### Step 3b: Multi-Option Selection
+
+When the server offers multiple payment options, the client evaluates **all** of
+them before committing to one:
+
+1. **Enumerate** all `accepts` entries.
+2. **Order** candidates based on the selection strategy:
+   - `server-order`: preserve server-provided ordering (default, backward compatible).
+   - `preference-first`: reorder by preference score (network > asset > transfer method).
+3. **Validate** each candidate against local policy (amount, chain, asset, payTo, scheme).
+4. **Select** the first candidate that passes all checks.
+5. **Report** rejection reasons for all rejected candidates (diagnostics).
+
+If **no** option passes policy, the client returns a descriptive error listing
+each rejected option and its failure reason.
 
 ### Step 4: Policy Validation
 
@@ -119,14 +144,16 @@ The signature authorizes the exact payment described in the requirements.
 
 ### Step 6: Retry with Payment Header
 
-The client retries the original request with the `X-PAYMENT` header:
+The client retries the original request with the `PAYMENT-SIGNATURE` header:
 
 ```http
 GET /paid/hello HTTP/1.1
 Host: api.example.com
 Accept: application/json
-X-PAYMENT: {"scheme":"exact","network":"84532","payload":{"signature":"0x...","authorization":{...}}}
+PAYMENT-SIGNATURE: <base64-encoded signed payment payload>
 ```
+
+(Legacy implementations may use `X-PAYMENT` — the SDK handles both.)
 
 #### Payment Header Structure
 
@@ -178,12 +205,21 @@ Content-Type: application/json
       │────────────────────────────────────────────────>│
       │                                                 │
       │  2. 402 Payment Required                        │
-      │     + PaymentRequirements                       │
+      │     + accepts: [{option A}, {option B}, ...]    │
       │<────────────────────────────────────────────────│
       │                                                 │
-      │  3. Parse requirements                          │
+      │  3. Parse all offered options                   │
       │                                                 │
-      │  4. Validate against policy                     │
+      │  3b. Multi-option selection                     │
+      │     ┌─────────────────────────┐                 │
+      │     │ For each option:        │                 │
+      │     │ - Reorder by preference │                 │
+      │     │ - Check policy          │                 │
+      │     │ - Select first passing  │                 │
+      │     │ - Log rejections        │                 │
+      │     └─────────────────────────┘                 │
+      │                                                 │
+      │  4. Validate selected option against policy     │
       │     ┌─────────────────────┐                     │
       │     │ Policy Check        │                     │
       │     │ - Amount OK?        │                     │
@@ -191,14 +227,14 @@ Content-Type: application/json
       │     │ - Recipient OK?     │                     │
       │     └─────────────────────┘                     │
       │                                                 │
-      │  5. Sign authorization                          │
+      │  5. Sign authorization (SDK)                    │
       │     ┌─────────────────────┐                     │
       │     │ Create Authorization│                     │
-      │     │ Sign with ECDSA     │                     │
+      │     │ Sign with EIP-712   │                     │
       │     └─────────────────────┘                     │
       │                                                 │
       │  6. GET /paid/hello                             │
-      │     X-PAYMENT: {signed authorization}           │
+      │     PAYMENT-SIGNATURE: {signed payload}         │
       │────────────────────────────────────────────────>│
       │                                                 │
       │                                   7. Verify sig │

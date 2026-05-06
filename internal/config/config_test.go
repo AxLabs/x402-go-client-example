@@ -61,8 +61,8 @@ func TestLoadFromEnv(t *testing.T) {
 		t.Errorf("AllowedAssets length = %d, want 2", len(cfg.AllowedAssets))
 	}
 
-	if cfg.AllowedChainID != "84532" {
-		t.Errorf("AllowedChainID = %q, want %q", cfg.AllowedChainID, "84532")
+	if cfg.AllowedChainID != "eip155:84532" {
+		t.Errorf("AllowedChainID = %q, want %q", cfg.AllowedChainID, "eip155:84532")
 	}
 
 	if cfg.Timeout != 60*time.Second {
@@ -182,6 +182,25 @@ func TestParseBool(t *testing.T) {
 			result := parseBool(tt.input)
 			if result != tt.expected {
 				t.Errorf("parseBool(%q) = %v, want %v", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestNormalizeToCaip2(t *testing.T) {
+	tests := []struct {
+		input, expected string
+	}{
+		{"84532", "eip155:84532"},
+		{"eip155:84532", "eip155:84532"},
+		{"1", "eip155:1"},
+		{"", ""},
+		{"eip155:1", "eip155:1"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			if got := NormalizeToCaip2(tt.input); got != tt.expected {
+				t.Errorf("NormalizeToCaip2(%q) = %q, want %q", tt.input, got, tt.expected)
 			}
 		})
 	}

@@ -22,6 +22,7 @@ import (
 
 	"github.com/bane-labs-org/x402-go-client-example/internal/logging"
 	"github.com/bane-labs-org/x402-go-client-example/internal/payment/policy"
+	"github.com/bane-labs-org/x402-go-client-example/internal/payment/selection"
 	"github.com/bane-labs-org/x402-go-client-example/internal/x402adapter"
 )
 
@@ -30,6 +31,7 @@ type Client struct {
 	httpClient *http.Client
 	adapter    *x402adapter.Adapter
 	policy     *policy.Policy
+	selector   *selection.Selector
 	logger     *logging.Logger
 
 	dryRun bool
@@ -38,12 +40,13 @@ type Client struct {
 
 // Options configures a Client.
 type Options struct {
-	Timeout time.Duration
-	Adapter *x402adapter.Adapter
-	Policy  *policy.Policy
-	Logger  *logging.Logger
-	DryRun  bool
-	NoPay   bool
+	Timeout  time.Duration
+	Adapter  *x402adapter.Adapter
+	Policy   *policy.Policy
+	Selector *selection.Selector
+	Logger   *logging.Logger
+	DryRun   bool
+	NoPay    bool
 }
 
 // DefaultOptions returns sensible defaults (no adapter: caller must set one
@@ -63,10 +66,16 @@ func New(opts Options) *Client {
 	if opts.Logger == nil {
 		opts.Logger = logging.Default()
 	}
+	sel := opts.Selector
+	if sel == nil {
+		// Default: server-order with no preferences (backward compatible).
+		sel = selection.NewSelector(opts.Policy, selection.Preferences{}, selection.StrategyServerOrder)
+	}
 	return &Client{
 		httpClient: &http.Client{Timeout: opts.Timeout},
 		adapter:    opts.Adapter,
 		policy:     opts.Policy,
+		selector:   sel,
 		logger:     opts.Logger.WithComponent("httpclient"),
 		dryRun:     opts.DryRun,
 		noPay:      opts.NoPay,
@@ -78,6 +87,10 @@ type RequestResult struct {
 	Response        *http.Response
 	Body            []byte
 	PaymentRequired bool
+	// AllAccepts is the full list of payment options offered by the server.
+	AllAccepts []x402adapter.Requirements
+	// SelectionResult captures the multi-option selection outcome (diagnostics).
+	SelectionResult *selection.Result
 	// Requirements is the SDK-selected payment option that was acted upon.
 	Requirements *x402adapter.Requirements
 	// PaymentPayload is the signed payload returned by the SDK (nil if no
@@ -99,11 +112,13 @@ type Request struct {
 //
 //  1. Send the request. If not 402, return.
 //  2. Ask the SDK to parse the 402.
-//  3. Ask the SDK to select acceptable requirements from the offer.
+//  3. Evaluate all offered options via the Selector (policy + preferences).
 //  4. Short-circuit on no-pay / dry-run.
-//  5. Run the local [policy.Policy] against the selected requirements.
-//  6. Ask the SDK to build + encode a signed payment header.
-//  7. Retry the original request with that header.
+//  5. Ask the SDK to build + encode a signed payment header for the selected option.
+//  6. Retry the original request with that header.
+//
+// If no option passes policy, a descriptive error is returned listing all
+// rejection reasons.
 func (c *Client) Do(ctx context.Context, req *Request) (*RequestResult, error) {
 	c.logger.Debug("Starting request", "method", req.Method, "url", req.URL)
 
@@ -130,13 +145,44 @@ func (c *Client) Do(ctx context.Context, req *Request) (*RequestResult, error) {
 		return result, fmt.Errorf("failed to parse payment required response: %w", err)
 	}
 
-	reqs, err := c.adapter.SelectRequirements(paymentRequired)
-	if err != nil {
-		return result, fmt.Errorf("no acceptable payment requirements: %w", err)
+	// Get all accepts for multi-option evaluation.
+	accepts := c.adapter.GetAccepts(paymentRequired)
+	result.AllAccepts = accepts
+
+	c.logger.Info("Server offered payment options", "count", len(accepts))
+	for i, a := range accepts {
+		c.logger.Info("  Option offered",
+			"index", i,
+			"scheme", a.Scheme,
+			"network", a.Network,
+			"amount", a.Amount,
+			"asset", a.Asset,
+			"payTo", a.PayTo,
+		)
 	}
+
+	// Use the Selector to pick the best acceptable option.
+	selResult := c.selector.Select(accepts)
+	result.SelectionResult = &selResult
+
+	if selResult.Selected == nil {
+		// Log all rejection reasons.
+		for _, rej := range selResult.Rejected {
+			c.logger.Warn("Option rejected",
+				"index", rej.Index,
+				"network", rej.Requirements.Network,
+				"reason", rej.Reason,
+			)
+		}
+		return result, fmt.Errorf("no acceptable payment option: all %d option(s) rejected; %s",
+			len(accepts), formatRejections(selResult.Rejected))
+	}
+
+	reqs := *selResult.Selected
 	result.Requirements = &reqs
 
-	c.logger.Info("Selected payment requirements",
+	c.logger.Info("Selected payment option",
+		"index", selResult.SelectedIndex,
 		"scheme", reqs.Scheme,
 		"network", reqs.Network,
 		"amount", reqs.Amount,
@@ -144,15 +190,19 @@ func (c *Client) Do(ctx context.Context, req *Request) (*RequestResult, error) {
 		"payTo", reqs.PayTo,
 	)
 
+	// Log rejected options for diagnostics.
+	for _, rej := range selResult.Rejected {
+		c.logger.Debug("Rejected option",
+			"index", rej.Index,
+			"network", rej.Requirements.Network,
+			"reason", rej.Reason,
+		)
+	}
+
 	if c.noPay {
 		c.logger.Info("Payment disabled (no-pay)")
 		return result, nil
 	}
-
-	if err := c.policy.Validate(&reqs); err != nil {
-		return result, fmt.Errorf("policy validation failed: %w", err)
-	}
-	c.logger.Info("Payment requirements passed policy check", "policy", c.policy.String())
 
 	if c.dryRun {
 		c.logger.Info("Dry-run mode - not signing or retrying")
@@ -172,12 +222,26 @@ func (c *Client) Do(ctx context.Context, req *Request) (*RequestResult, error) {
 	}
 
 	retry.PaymentRequired = true
+	retry.AllAccepts = accepts
+	retry.SelectionResult = &selResult
 	retry.Requirements = &reqs
 	retry.PaymentPayload = &payload
 	retry.PaymentMade = true
 	retry.Retried = true
 	c.logger.Info("Retry completed", "status", retry.Response.StatusCode)
 	return retry, nil
+}
+
+// formatRejections builds a human-readable summary of all rejection reasons.
+func formatRejections(rejected []selection.RejectedOption) string {
+	if len(rejected) == 0 {
+		return "no options offered"
+	}
+	msgs := make([]string, 0, len(rejected))
+	for _, r := range rejected {
+		msgs = append(msgs, fmt.Sprintf("[%d] %s: %s", r.Index, r.Requirements.Network, r.Reason))
+	}
+	return strings.Join(msgs, "; ")
 }
 
 // makeRequest performs a single HTTP round-trip, optionally adding the SDK's

@@ -86,14 +86,56 @@ func NewForEVM(signer EVMSigner) *Adapter {
 // ParsePaymentRequired extracts a PaymentRequired document from an HTTP 402
 // response using the SDK's header/body decoder. It understands both the v2
 // PAYMENT-REQUIRED base64 header and the legacy v1 body form.
+//
+// For v1 responses, it additionally normalizes the field mapping so that
+// maxAmountRequired is available as Amount in the v2 Requirements struct.
 func (a *Adapter) ParsePaymentRequired(resp *http.Response, body []byte) (PaymentRequired, error) {
-	return a.httpClient.GetPaymentRequiredResponse(flattenHeaders(resp.Header), body)
+	pr, err := a.httpClient.GetPaymentRequiredResponse(flattenHeaders(resp.Header), body)
+	if err != nil {
+		return pr, err
+	}
+	// If this was a v1 body, the SDK may not map maxAmountRequired→Amount.
+	// Parse the raw body to extract v1 fields and patch Amount if empty.
+	if pr.X402Version <= 1 && len(body) > 0 {
+		pr = patchV1Amounts(pr, body)
+	}
+	return pr, nil
+}
+
+// v1AcceptsRaw is used to extract maxAmountRequired from v1 bodies.
+type v1AcceptsRaw struct {
+	MaxAmountRequired string `json:"maxAmountRequired"`
+}
+
+type v1BodyRaw struct {
+	Accepts []v1AcceptsRaw `json:"accepts"`
+}
+
+// patchV1Amounts fills in empty Amount fields from v1's maxAmountRequired.
+func patchV1Amounts(pr PaymentRequired, body []byte) PaymentRequired {
+	var raw v1BodyRaw
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return pr
+	}
+	for i := range pr.Accepts {
+		if pr.Accepts[i].Amount == "" && i < len(raw.Accepts) && raw.Accepts[i].MaxAmountRequired != "" {
+			pr.Accepts[i].Amount = raw.Accepts[i].MaxAmountRequired
+		}
+	}
+	return pr
 }
 
 // SelectRequirements asks the SDK to pick the first acceptable payment option
 // from the server's Accepts list, based on the schemes we registered.
 func (a *Adapter) SelectRequirements(pr PaymentRequired) (Requirements, error) {
 	return a.client.SelectPaymentRequirements(pr.Accepts)
+}
+
+// GetAccepts returns all payment options from the parsed 402 response.
+// This allows callers to implement their own selection logic (multi-option,
+// preference-aware) on top of the raw accepts list.
+func (a *Adapter) GetAccepts(pr PaymentRequired) []Requirements {
+	return pr.Accepts
 }
 
 // CreateAndEncodePayment asks the SDK to build a signed payment payload for
