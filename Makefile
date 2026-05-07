@@ -88,6 +88,10 @@ test-coverage: ## Run tests with coverage
 test-integration: ## Run integration tests
 	$(GOCMD) test $(GOFLAGS) ./test/...
 
+.PHONY: test-e2e
+test-e2e: ## Run E2E tests (requires running x402-go-server-example)
+	$(GOCMD) test ./test/e2e/... -count=1 -v
+
 .PHONY: test-race
 test-race: ## Run tests with race detection
 	$(GOCMD) test -race ./...

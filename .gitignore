@@ -1,5 +1,6 @@
-# Ignore environment file (may contain secrets)
-.env
+# Ignore environment files (may contain secrets)
+.env*
+!.env.example
 
 # Build artifacts
 /build/

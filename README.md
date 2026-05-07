@@ -166,6 +166,63 @@ Format and vet:
 make check
 ```
 
+## End-to-End Testing
+
+E2E tests verify the full x402 payment flow against a real running `x402-go-server-example` instance. They are **skipped by default** and do not run as part of `go test ./...` unless the required environment variables are set.
+
+### Prerequisites
+
+- A running `x402-go-server-example` server exposing:
+  - `GET /healthz` (unpaid)
+  - `GET /info` (unpaid)
+  - `GET /paid/hello` (paid, multi-option: Base Sepolia + Neo X)
+  - `POST /paid/echo` (paid)
+- For paid tests: a funded test private key compatible with the server's facilitator/settlement setup
+
+### Running E2E Tests
+
+**Unpaid endpoint tests only** (no private key needed):
+
+```bash
+X402_E2E_SERVER_URL=http://localhost:8080 make test-e2e
+```
+
+**Full E2E tests** (including paid flows):
+
+```bash
+X402_E2E_SERVER_URL=http://localhost:8080 \
+X402_E2E_PRIVATE_KEY=0x... \
+make test-e2e
+```
+
+**With multi-option preference verification:**
+
+```bash
+X402_E2E_SERVER_URL=http://localhost:8080 \
+X402_E2E_PRIVATE_KEY=0x... \
+CLIENT_PREFERRED_NETWORKS=eip155:12227332 \
+make test-e2e
+```
+
+### What's Tested
+
+| Test | Requires | Verifies |
+| ---- | -------- | -------- |
+| `TestE2E_Healthz` | Server URL | Unpaid endpoint returns 200 |
+| `TestE2E_Info` | Server URL | Pricing metadata present |
+| `TestE2E_PaidHello` | Server URL + Key | Full 402 → sign → retry → 200 flow |
+| `TestE2E_PaidEcho_BodyPreserved` | Server URL + Key | POST body preserved across retry |
+| `TestE2E_MultiOption_PreferenceSelection` | Server URL + Key | Neo X selected when preferred |
+| `TestE2E_PolicyRejection_Fallback` | Server URL + Key | Fallback to Neo X when Base Sepolia rejected |
+| `TestE2E_NoAcceptableOptions` | Server URL + Key | Explicit error with rejection reasons |
+
+### Important Notes
+
+- Normal `go test ./...` passes without a running server (E2E tests skip)
+- No private keys should be committed to the repository
+- The server must be started separately; E2E tests do not start it
+- Paid tests require a test account compatible with the server's settlement setup
+
 ## Project Structure
 
 ```text
