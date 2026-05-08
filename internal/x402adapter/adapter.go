@@ -141,9 +141,6 @@ func (a *Adapter) GetAccepts(pr PaymentRequired) []Requirements {
 // CreateAndEncodePayment asks the SDK to build a signed payment payload for
 // the given requirements and then encodes it into the HTTP headers that the
 // server expects on the retry request.
-//
-// Signing happens entirely inside the SDK mechanism (EVM exact / EIP-3009).
-// This app never assembles authorization messages by hand.
 func (a *Adapter) CreateAndEncodePayment(
 	ctx context.Context,
 	pr PaymentRequired,

@@ -198,9 +198,6 @@ func (a *App) executeRequest(method, url string, body []byte) error {
 		a.config.AllowedPayTo,
 	)
 	a.printInfo("Policy", pol.String())
-	if a.config.EIP712DomainName != "" && a.config.EIP712DomainVersion != "" {
-		a.printInfo("EIP-712 Domain Override", fmt.Sprintf("name=%s version=%s", a.config.EIP712DomainName, a.config.EIP712DomainVersion))
-	}
 
 	// Build option selector with preferences.
 	prefs := selection.Preferences{
@@ -214,15 +211,13 @@ func (a *App) executeRequest(method, url string, body []byte) error {
 
 	// Build orchestrator.
 	client := httpclient.New(httpclient.Options{
-		Timeout:             a.timeout,
-		Adapter:             adapter,
-		Policy:              pol,
-		Selector:            sel,
-		Logger:              a.logger,
-		EIP712DomainName:    a.config.EIP712DomainName,
-		EIP712DomainVersion: a.config.EIP712DomainVersion,
-		DryRun:              a.dryRun || a.config.DryRun,
-		NoPay:               a.noPay || a.config.NoPay,
+		Timeout:  a.timeout,
+		Adapter:  adapter,
+		Policy:   pol,
+		Selector: sel,
+		Logger:   a.logger,
+		DryRun:   a.dryRun || a.config.DryRun,
+		NoPay:    a.noPay || a.config.NoPay,
 	})
 
 	a.printStep("Making initial request")

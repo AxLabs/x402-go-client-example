@@ -157,39 +157,9 @@ go run ./cmd/client version
 | `CLIENT_PREFERRED_ASSETS` | Preferred asset addresses, comma-separated | - |
 | `CLIENT_PREFERRED_TRANSFER_METHODS` | Preferred methods (`eip3009`, `permit2`) | - |
 | `CLIENT_SELECTION_STRATEGY` | `server-order` or `preference-first` | `server-order` |
-| `CLIENT_EIP712_DOMAIN_NAME` | Override EIP-712 domain `name` for EIP-3009 signing (token-specific) | - |
-| `CLIENT_EIP712_DOMAIN_VERSION` | Override EIP-712 domain `version` for EIP-3009 signing (token-specific) | - |
 | `CLIENT_TIMEOUT` | HTTP timeout | `30s` |
 | `CLIENT_DRY_RUN` | Parse 402 but do not sign/retry | `false` |
 | `CLIENT_NO_PAY` | Never attempt payment flow | `false` |
-
-For EIP-3009 (`transferWithAuthorization`), the signature domain is token-specific and must match the token contract's EIP-712 domain. In practice this means:
-
-- `name` and `version` must match the token's domain values
-- `chainId` must match the active network
-- `verifyingContract` must be the token contract address (`asset`)
-
-If the offered `requirements.extra.name/version` are wrong for the token, set both domain overrides to force signing with the token's actual domain values.
-
-Example (Neo X xGAS):
-
-```json
-{
-  "name": "Extended GAS",
-  "version": "1",
-  "chainId": 47763,
-  "verifyingContract": "<xgas contract address>"
-}
-```
-
-Set the client overrides for that token/domain:
-
-```bash
-CLIENT_EIP712_DOMAIN_NAME=Extended GAS
-CLIENT_EIP712_DOMAIN_VERSION=1
-```
-
-Permit2 note: Permit2 signatures are for the Permit2 contract domain rather than each ERC-20 token's own EIP-3009 domain. These two overrides are only applied to EIP-3009 signing paths.
 
 ### Buyer Policy Configuration
 

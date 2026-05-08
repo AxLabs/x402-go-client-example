@@ -229,47 +229,6 @@ func TestClient_RetrySurfacesSecond402HeaderError(t *testing.T) {
 	}
 }
 
-func TestApplyEIP712DomainOverrides(t *testing.T) {
-	c := New(Options{
-		Logger:              debugLogger(),
-		EIP712DomainName:    "xGAS",
-		EIP712DomainVersion: "1",
-	})
-
-	original := x402adapter.Requirements{
-		Scheme:  "exact",
-		Network: "eip155:12227332",
-		Extra: map[string]interface{}{
-			"assetTransferMethod": "eip3009",
-			"name":                "WrongDomain",
-			"version":             "999",
-		},
-	}
-
-	updated, overridden := c.applyEIP712DomainOverrides(original)
-	if !overridden {
-		t.Fatal("expected override to be applied")
-	}
-	if got, _ := updated.Extra["name"].(string); got != "xGAS" {
-		t.Fatalf("updated extra.name = %q, want xGAS", got)
-	}
-	if got, _ := updated.Extra["version"].(string); got != "1" {
-		t.Fatalf("updated extra.version = %q, want 1", got)
-	}
-	if got, _ := original.Extra["name"].(string); got != "WrongDomain" {
-		t.Fatalf("original extra.name mutated = %q", got)
-	}
-
-	noOverride := New(Options{Logger: debugLogger()})
-	unchanged, overridden := noOverride.applyEIP712DomainOverrides(original)
-	if overridden {
-		t.Fatal("did not expect override when no domain configured")
-	}
-	if got, _ := unchanged.Extra["name"].(string); got != "WrongDomain" {
-		t.Fatalf("unexpected name without override = %q", got)
-	}
-}
-
 func encodePaymentRequiredHeader(pr x402types.PaymentRequired) (string, error) {
 	data, err := json.Marshal(pr)
 	if err != nil {

@@ -33,8 +33,6 @@ type Client struct {
 	policy     *policy.Policy
 	selector   *selection.Selector
 	logger     *logging.Logger
-	domainName string
-	domainVer  string
 
 	dryRun bool
 	noPay  bool
@@ -47,11 +45,8 @@ type Options struct {
 	Policy   *policy.Policy
 	Selector *selection.Selector
 	Logger   *logging.Logger
-	// Optional EIP-712 domain overrides for EIP-3009 signing.
-	EIP712DomainName    string
-	EIP712DomainVersion string
-	DryRun              bool
-	NoPay               bool
+	DryRun   bool
+	NoPay    bool
 }
 
 // DefaultOptions returns sensible defaults (no adapter: caller must set one
@@ -82,8 +77,6 @@ func New(opts Options) *Client {
 		policy:     opts.Policy,
 		selector:   sel,
 		logger:     opts.Logger.WithComponent("httpclient"),
-		domainName: strings.TrimSpace(opts.EIP712DomainName),
-		domainVer:  strings.TrimSpace(opts.EIP712DomainVersion),
 		dryRun:     opts.DryRun,
 		noPay:      opts.NoPay,
 	}
@@ -140,7 +133,10 @@ func (c *Client) Do(ctx context.Context, req *Request) (*RequestResult, error) {
 		return result, nil
 	}
 
-	c.logger.Info("Received 402 Payment Required")
+	c.logger.Info("Received 402 Payment Required",
+		"payment_required_header_len", len(result.Response.Header.Get("PAYMENT-REQUIRED")),
+		"content_type", result.Response.Header.Get("Content-Type"),
+	)
 	result.PaymentRequired = true
 
 	if c.adapter == nil {
@@ -217,16 +213,7 @@ func (c *Client) Do(ctx context.Context, req *Request) (*RequestResult, error) {
 		return result, nil
 	}
 
-	reqsToSign, overridden := c.applyEIP712DomainOverrides(reqs)
-	if overridden {
-		c.logger.Warn("Overriding offered EIP-712 domain for signing",
-			"offered_name", extraString(reqs.Extra, "name"),
-			"offered_version", extraString(reqs.Extra, "version"),
-			"signing_name", c.domainName,
-			"signing_version", c.domainVer,
-		)
-	}
-	payload, paymentHeaders, err := c.adapter.CreateAndEncodePayment(ctx, paymentRequired, reqsToSign)
+	payload, paymentHeaders, err := c.adapter.CreateAndEncodePayment(ctx, paymentRequired, reqs)
 	if err != nil {
 		return result, fmt.Errorf("failed to build payment header: %w", err)
 	}
@@ -241,18 +228,25 @@ func (c *Client) Do(ctx context.Context, req *Request) (*RequestResult, error) {
 	retry.PaymentRequired = true
 	retry.AllAccepts = accepts
 	retry.SelectionResult = &selResult
-	retry.Requirements = &reqsToSign
+	retry.Requirements = &reqs
 	retry.PaymentPayload = &payload
 	retry.PaymentMade = true
 	retry.Retried = true
 	if retry.Response.StatusCode == http.StatusPaymentRequired && c.adapter != nil {
+		// Log diagnostic details for the failed retry.
+		c.logger.Warn("Retry returned 402 — payment was rejected",
+			"status", retry.Response.StatusCode,
+			"payment_required_header", retry.Response.Header.Get("PAYMENT-REQUIRED"),
+			"payment_response_header", retry.Response.Header.Get("PAYMENT-RESPONSE"),
+			"body_preview", truncate(string(retry.Body), 512),
+		)
 		retryPR, parseErr := c.adapter.ParsePaymentRequired(retry.Response, retry.Body)
 		if parseErr != nil {
-			c.logger.Warn("Retry returned 402 but client could not parse PAYMENT-REQUIRED", "error", parseErr)
+			c.logger.Warn("Could not parse retry 402 PAYMENT-REQUIRED", "error", parseErr)
 		} else {
 			retry.RetryError = retryPR.Error
 			if retryPR.Error != "" {
-				c.logger.Warn("Retry returned 402 PAYMENT-REQUIRED", "error", retryPR.Error)
+				c.logger.Warn("Facilitator error", "error", retryPR.Error)
 			}
 		}
 	}
@@ -260,31 +254,12 @@ func (c *Client) Do(ctx context.Context, req *Request) (*RequestResult, error) {
 	return retry, nil
 }
 
-func (c *Client) applyEIP712DomainOverrides(reqs x402adapter.Requirements) (x402adapter.Requirements, bool) {
-	if c.domainName == "" && c.domainVer == "" {
-		return reqs, false
+// truncate returns s truncated to maxLen with a "..." suffix if needed.
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
 	}
-	updated := reqs
-	if updated.Extra == nil {
-		updated.Extra = map[string]interface{}{}
-	} else {
-		copied := make(map[string]interface{}, len(updated.Extra))
-		for k, v := range updated.Extra {
-			copied[k] = v
-		}
-		updated.Extra = copied
-	}
-	updated.Extra["name"] = c.domainName
-	updated.Extra["version"] = c.domainVer
-	return updated, true
-}
-
-func extraString(extra map[string]interface{}, key string) string {
-	if extra == nil {
-		return ""
-	}
-	v, _ := extra[key].(string)
-	return v
+	return s[:maxLen] + "..."
 }
 
 // formatRejections builds a human-readable summary of all rejection reasons.

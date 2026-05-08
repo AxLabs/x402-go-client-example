@@ -130,11 +130,6 @@ method:
 - `permit2`: domain is defined by the Permit2 contract on that chain, not by
   each token's EIP-3009 domain.
 
-If a server returns incorrect EIP-3009 domain metadata in
-`requirements.extra.name/version`, the client can override those two fields via
-`CLIENT_EIP712_DOMAIN_NAME` and `CLIENT_EIP712_DOMAIN_VERSION` so signatures
-match the token's actual domain.
-
 If policy passes, the client constructs and signs the authorization:
 
 ```go

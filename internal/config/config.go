@@ -31,12 +31,6 @@ type Config struct {
 	PreferredTransferMethods []string `json:"preferredTransferMethods"` // Transfer method preferences (eip3009, permit2)
 	SelectionStrategy        string   `json:"selectionStrategy"`        // "server-order" or "preference-first"
 
-	// EIP-712 signing domain overrides (optional).
-	// When set, these values override payment requirement extra.name/version
-	// before the client signs EIP-3009 payloads.
-	EIP712DomainName    string `json:"eip712DomainName"`
-	EIP712DomainVersion string `json:"eip712DomainVersion"`
-
 	// HTTP Client
 	Timeout time.Duration `json:"timeout"`
 
@@ -58,8 +52,6 @@ func DefaultConfig() *Config {
 		PreferredAssets:          []string{},
 		PreferredTransferMethods: []string{},
 		SelectionStrategy:        "server-order",
-		EIP712DomainName:         "",
-		EIP712DomainVersion:      "",
 		Timeout:                  30 * time.Second,
 		DryRun:                   false,
 		NoPay:                    false,
@@ -114,14 +106,6 @@ func LoadFromEnv() (*Config, error) {
 		cfg.SelectionStrategy = strings.ToLower(strings.TrimSpace(v))
 	}
 
-	if v := os.Getenv("CLIENT_EIP712_DOMAIN_NAME"); v != "" {
-		cfg.EIP712DomainName = strings.TrimSpace(v)
-	}
-
-	if v := os.Getenv("CLIENT_EIP712_DOMAIN_VERSION"); v != "" {
-		cfg.EIP712DomainVersion = strings.TrimSpace(v)
-	}
-
 	if v := os.Getenv("CLIENT_TIMEOUT"); v != "" {
 		d, err := time.ParseDuration(v)
 		if err != nil {
@@ -161,10 +145,6 @@ func (c *Config) Validate() error {
 	// Validate timeout
 	if c.Timeout <= 0 {
 		errs = append(errs, errors.New("Timeout must be positive"))
-	}
-
-	if (c.EIP712DomainName == "") != (c.EIP712DomainVersion == "") {
-		errs = append(errs, errors.New("EIP-712 domain override requires both name and version"))
 	}
 
 	if len(errs) > 0 {
