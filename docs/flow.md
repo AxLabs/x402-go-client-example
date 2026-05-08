@@ -99,7 +99,7 @@ each rejected option and its failure reason.
 
 ```go
 policy := &Policy{
-    MaxAmount:       1000000,        // Max 1 USDC
+    MaxAmount:       configuredMaxAmount, // 0 means no cap; set explicitly to enforce one
     AllowedChainIDs: []string{"84532"}, // Only Base Sepolia
     AllowedPayTo:    []string{...},  // Known recipients
 }
@@ -120,6 +120,20 @@ Policy checks include:
 If ANY policy check fails, the client **MUST NOT** sign the payment.
 
 ### Step 5: Sign Payment Authorization
+
+For EVM transfer methods, the EIP-712 domain used for signing depends on the
+method:
+
+- `eip3009` (`transferWithAuthorization`): domain is token-specific and must
+  match that token's contract domain (`name`, `version`, `chainId`,
+  `verifyingContract`).
+- `permit2`: domain is defined by the Permit2 contract on that chain, not by
+  each token's EIP-3009 domain.
+
+If a server returns incorrect EIP-3009 domain metadata in
+`requirements.extra.name/version`, the client can override those two fields via
+`CLIENT_EIP712_DOMAIN_NAME` and `CLIENT_EIP712_DOMAIN_VERSION` so signatures
+match the token's actual domain.
 
 If policy passes, the client constructs and signs the authorization:
 
@@ -255,7 +269,7 @@ If requirements violate policy, the flow stops at step 4:
 ```
 Client: GET /paid/expensive
 Server: 402 (amount: 50000000)
-Client: Policy check FAILED (max: 1000000)
+Client: Policy check FAILED (max: <configured limit>)
 Client: EXIT with error - no payment signed
 ```
 

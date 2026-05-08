@@ -2,6 +2,7 @@ package httpclient
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,7 @@ import (
 	"github.com/bane-labs-org/x402-go-client-example/internal/logging"
 	"github.com/bane-labs-org/x402-go-client-example/internal/payment/policy"
 	"github.com/bane-labs-org/x402-go-client-example/internal/x402adapter"
+	x402types "github.com/x402-foundation/x402/go/types"
 )
 
 // v1Body is the legacy 402 body shape the SDK's HTTPClient parses.
@@ -164,6 +166,116 @@ func TestClient_DryRun_NoRetry(t *testing.T) {
 	if res.Requirements == nil {
 		t.Error("dry-run should still surface Requirements")
 	}
+}
+
+func TestClient_RetrySurfacesSecond402HeaderError(t *testing.T) {
+	count := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		count++
+		w.Header().Set("Content-Type", "application/json")
+		if count == 1 {
+			w.WriteHeader(http.StatusPaymentRequired)
+			_ = json.NewEncoder(w).Encode(newV1Body())
+			return
+		}
+
+		pr := x402types.PaymentRequired{
+			X402Version: 2,
+			Error:       "invalid_exact_evm_missing_eip712_domain: missing EIP-712 domain name/version in requirements.extra",
+			Accepts: []x402types.PaymentRequirements{{
+				Scheme:  "exact",
+				Network: "eip155:12227332",
+				Asset:   "0xD4ac6B385C16cd94A8E54aB422138833804AE443",
+				Amount:  "20000000000000000",
+				PayTo:   "0xE2E3EecCb2C3f9701Db514bb2a64bA63646E9055",
+				Extra: map[string]interface{}{
+					"assetTransferMethod": "eip3009",
+				},
+			}},
+		}
+		encoded, err := encodePaymentRequiredHeader(pr)
+		if err != nil {
+			t.Fatalf("encodePaymentRequiredHeader() err = %v", err)
+		}
+		w.Header().Set("PAYMENT-REQUIRED", encoded)
+		w.WriteHeader(http.StatusPaymentRequired)
+		_, _ = w.Write([]byte("null"))
+	}))
+	defer srv.Close()
+
+	signer, err := x402adapter.NewEVMSignerFromPrivateKey("0x4c0883a69102937d6231471b5dbb6204fe5129617082792aeef6f9f6f7f8f62d")
+	if err != nil {
+		t.Fatalf("NewEVMSignerFromPrivateKey() err = %v", err)
+	}
+
+	c := New(Options{
+		Timeout: 5 * time.Second,
+		Adapter: x402adapter.NewForEVM(signer),
+		Logger:  debugLogger(),
+	})
+	res, err := c.Get(context.Background(), srv.URL)
+	if err != nil {
+		t.Fatalf("Get() err = %v", err)
+	}
+	if !res.Retried || !res.PaymentMade {
+		t.Fatalf("expected retry path, got Retried=%v PaymentMade=%v", res.Retried, res.PaymentMade)
+	}
+	want := "invalid_exact_evm_missing_eip712_domain: missing EIP-712 domain name/version in requirements.extra"
+	if res.RetryError != want {
+		t.Fatalf("RetryError = %q, want %q", res.RetryError, want)
+	}
+	if got := FormatResult(res); !contains(got, want) {
+		t.Fatalf("FormatResult() missing retry error: %s", got)
+	}
+}
+
+func TestApplyEIP712DomainOverrides(t *testing.T) {
+	c := New(Options{
+		Logger:              debugLogger(),
+		EIP712DomainName:    "xGAS",
+		EIP712DomainVersion: "1",
+	})
+
+	original := x402adapter.Requirements{
+		Scheme:  "exact",
+		Network: "eip155:12227332",
+		Extra: map[string]interface{}{
+			"assetTransferMethod": "eip3009",
+			"name":                "WrongDomain",
+			"version":             "999",
+		},
+	}
+
+	updated, overridden := c.applyEIP712DomainOverrides(original)
+	if !overridden {
+		t.Fatal("expected override to be applied")
+	}
+	if got, _ := updated.Extra["name"].(string); got != "xGAS" {
+		t.Fatalf("updated extra.name = %q, want xGAS", got)
+	}
+	if got, _ := updated.Extra["version"].(string); got != "1" {
+		t.Fatalf("updated extra.version = %q, want 1", got)
+	}
+	if got, _ := original.Extra["name"].(string); got != "WrongDomain" {
+		t.Fatalf("original extra.name mutated = %q", got)
+	}
+
+	noOverride := New(Options{Logger: debugLogger()})
+	unchanged, overridden := noOverride.applyEIP712DomainOverrides(original)
+	if overridden {
+		t.Fatal("did not expect override when no domain configured")
+	}
+	if got, _ := unchanged.Extra["name"].(string); got != "WrongDomain" {
+		t.Fatalf("unexpected name without override = %q", got)
+	}
+}
+
+func encodePaymentRequiredHeader(pr x402types.PaymentRequired) (string, error) {
+	data, err := json.Marshal(pr)
+	if err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString(data), nil
 }
 
 func TestFormatRequirements(t *testing.T) {

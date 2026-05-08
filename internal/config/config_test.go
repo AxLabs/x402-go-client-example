@@ -17,6 +17,10 @@ func TestDefaultConfig(t *testing.T) {
 		t.Errorf("Default Timeout = %v, want %v", cfg.Timeout, 30*time.Second)
 	}
 
+	if cfg.MaxAmount != "" {
+		t.Errorf("Default MaxAmount = %q, want empty", cfg.MaxAmount)
+	}
+
 	if cfg.DryRun {
 		t.Error("Default DryRun should be false")
 	}
@@ -34,6 +38,8 @@ func TestLoadFromEnv(t *testing.T) {
 	os.Setenv("CLIENT_ALLOWED_CHAIN_ID", "84532")
 	os.Setenv("CLIENT_TIMEOUT", "60s")
 	os.Setenv("CLIENT_DRY_RUN", "true")
+	os.Setenv("CLIENT_EIP712_DOMAIN_NAME", "xGAS")
+	os.Setenv("CLIENT_EIP712_DOMAIN_VERSION", "1")
 
 	defer func() {
 		os.Unsetenv("CLIENT_LOG_LEVEL")
@@ -42,6 +48,8 @@ func TestLoadFromEnv(t *testing.T) {
 		os.Unsetenv("CLIENT_ALLOWED_CHAIN_ID")
 		os.Unsetenv("CLIENT_TIMEOUT")
 		os.Unsetenv("CLIENT_DRY_RUN")
+		os.Unsetenv("CLIENT_EIP712_DOMAIN_NAME")
+		os.Unsetenv("CLIENT_EIP712_DOMAIN_VERSION")
 	}()
 
 	cfg, err := LoadFromEnv()
@@ -71,6 +79,14 @@ func TestLoadFromEnv(t *testing.T) {
 
 	if !cfg.DryRun {
 		t.Error("DryRun should be true")
+	}
+
+	if cfg.EIP712DomainName != "xGAS" {
+		t.Errorf("EIP712DomainName = %q, want %q", cfg.EIP712DomainName, "xGAS")
+	}
+
+	if cfg.EIP712DomainVersion != "1" {
+		t.Errorf("EIP712DomainVersion = %q, want %q", cfg.EIP712DomainVersion, "1")
 	}
 }
 
@@ -117,6 +133,34 @@ func TestConfigValidate(t *testing.T) {
 				Timeout:  -1 * time.Second,
 			},
 			wantErr: true,
+		},
+		{
+			name: "domain override missing version",
+			config: &Config{
+				LogLevel:         "info",
+				Timeout:          30 * time.Second,
+				EIP712DomainName: "xGAS",
+			},
+			wantErr: true,
+		},
+		{
+			name: "domain override missing name",
+			config: &Config{
+				LogLevel:            "info",
+				Timeout:             30 * time.Second,
+				EIP712DomainVersion: "1",
+			},
+			wantErr: true,
+		},
+		{
+			name: "domain override complete",
+			config: &Config{
+				LogLevel:            "info",
+				Timeout:             30 * time.Second,
+				EIP712DomainName:    "xGAS",
+				EIP712DomainVersion: "1",
+			},
+			wantErr: false,
 		},
 	}
 

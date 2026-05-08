@@ -57,6 +57,7 @@ All protocol concerns (parsing, signing, wire formats, header encoding)
 live in the SDK.`,
 		PersistentPreRunE: a.setup,
 		SilenceUsage:      true,
+		SilenceErrors:     true,
 	}
 
 	rootCmd.PersistentFlags().BoolVarP(&a.verbose, "verbose", "v", false, "Enable verbose/debug output")
@@ -197,6 +198,9 @@ func (a *App) executeRequest(method, url string, body []byte) error {
 		a.config.AllowedPayTo,
 	)
 	a.printInfo("Policy", pol.String())
+	if a.config.EIP712DomainName != "" && a.config.EIP712DomainVersion != "" {
+		a.printInfo("EIP-712 Domain Override", fmt.Sprintf("name=%s version=%s", a.config.EIP712DomainName, a.config.EIP712DomainVersion))
+	}
 
 	// Build option selector with preferences.
 	prefs := selection.Preferences{
@@ -210,13 +214,15 @@ func (a *App) executeRequest(method, url string, body []byte) error {
 
 	// Build orchestrator.
 	client := httpclient.New(httpclient.Options{
-		Timeout:  a.timeout,
-		Adapter:  adapter,
-		Policy:   pol,
-		Selector: sel,
-		Logger:   a.logger,
-		DryRun:   a.dryRun || a.config.DryRun,
-		NoPay:    a.noPay || a.config.NoPay,
+		Timeout:             a.timeout,
+		Adapter:             adapter,
+		Policy:              pol,
+		Selector:            sel,
+		Logger:              a.logger,
+		EIP712DomainName:    a.config.EIP712DomainName,
+		EIP712DomainVersion: a.config.EIP712DomainVersion,
+		DryRun:              a.dryRun || a.config.DryRun,
+		NoPay:               a.noPay || a.config.NoPay,
 	})
 
 	a.printStep("Making initial request")
@@ -237,8 +243,8 @@ func (a *App) executeRequest(method, url string, body []byte) error {
 
 	a.displayResult(result)
 
-	if result.Response.StatusCode >= 400 && !result.PaymentMade {
-		if result.PaymentRequired {
+	if result.Response.StatusCode >= 400 {
+		if result.PaymentRequired && !result.PaymentMade {
 			if a.dryRun {
 				a.printInfo("Dry-run mode", "Payment not attempted")
 				return nil
@@ -247,6 +253,9 @@ func (a *App) executeRequest(method, url string, body []byte) error {
 				a.printInfo("No-pay mode", "Payment not attempted")
 				return nil
 			}
+		}
+		if result.PaymentMade {
+			return fmt.Errorf("request failed with status %d after payment retry", result.Response.StatusCode)
 		}
 		return fmt.Errorf("request failed with status %d", result.Response.StatusCode)
 	}
@@ -288,7 +297,14 @@ func (a *App) displayResult(result *httpclient.RequestResult) {
 	}
 
 	if result.PaymentMade {
-		a.printStep("Payment authorized and retry completed (SDK-signed)")
+		if result.Response.StatusCode >= 400 {
+			a.printStep("Payment retry sent (SDK-signed), but server did not accept it")
+			if result.RetryError != "" {
+				a.printInfo("Retry PAYMENT-REQUIRED error", result.RetryError)
+			}
+		} else {
+			a.printStep("Payment accepted and retry completed (SDK-signed)")
+		}
 		if result.PaymentPayload != nil {
 			if j, err := json.MarshalIndent(result.PaymentPayload, "    ", "  "); err == nil {
 				fmt.Printf("    Payment Payload:\n    %s\n", string(j))

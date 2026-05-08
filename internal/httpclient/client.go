@@ -33,6 +33,8 @@ type Client struct {
 	policy     *policy.Policy
 	selector   *selection.Selector
 	logger     *logging.Logger
+	domainName string
+	domainVer  string
 
 	dryRun bool
 	noPay  bool
@@ -45,8 +47,11 @@ type Options struct {
 	Policy   *policy.Policy
 	Selector *selection.Selector
 	Logger   *logging.Logger
-	DryRun   bool
-	NoPay    bool
+	// Optional EIP-712 domain overrides for EIP-3009 signing.
+	EIP712DomainName    string
+	EIP712DomainVersion string
+	DryRun              bool
+	NoPay               bool
 }
 
 // DefaultOptions returns sensible defaults (no adapter: caller must set one
@@ -77,6 +82,8 @@ func New(opts Options) *Client {
 		policy:     opts.Policy,
 		selector:   sel,
 		logger:     opts.Logger.WithComponent("httpclient"),
+		domainName: strings.TrimSpace(opts.EIP712DomainName),
+		domainVer:  strings.TrimSpace(opts.EIP712DomainVersion),
 		dryRun:     opts.DryRun,
 		noPay:      opts.NoPay,
 	}
@@ -87,6 +94,7 @@ type RequestResult struct {
 	Response        *http.Response
 	Body            []byte
 	PaymentRequired bool
+	RetryError      string
 	// AllAccepts is the full list of payment options offered by the server.
 	AllAccepts []x402adapter.Requirements
 	// SelectionResult captures the multi-option selection outcome (diagnostics).
@@ -209,7 +217,16 @@ func (c *Client) Do(ctx context.Context, req *Request) (*RequestResult, error) {
 		return result, nil
 	}
 
-	payload, paymentHeaders, err := c.adapter.CreateAndEncodePayment(ctx, paymentRequired, reqs)
+	reqsToSign, overridden := c.applyEIP712DomainOverrides(reqs)
+	if overridden {
+		c.logger.Warn("Overriding offered EIP-712 domain for signing",
+			"offered_name", extraString(reqs.Extra, "name"),
+			"offered_version", extraString(reqs.Extra, "version"),
+			"signing_name", c.domainName,
+			"signing_version", c.domainVer,
+		)
+	}
+	payload, paymentHeaders, err := c.adapter.CreateAndEncodePayment(ctx, paymentRequired, reqsToSign)
 	if err != nil {
 		return result, fmt.Errorf("failed to build payment header: %w", err)
 	}
@@ -224,12 +241,50 @@ func (c *Client) Do(ctx context.Context, req *Request) (*RequestResult, error) {
 	retry.PaymentRequired = true
 	retry.AllAccepts = accepts
 	retry.SelectionResult = &selResult
-	retry.Requirements = &reqs
+	retry.Requirements = &reqsToSign
 	retry.PaymentPayload = &payload
 	retry.PaymentMade = true
 	retry.Retried = true
+	if retry.Response.StatusCode == http.StatusPaymentRequired && c.adapter != nil {
+		retryPR, parseErr := c.adapter.ParsePaymentRequired(retry.Response, retry.Body)
+		if parseErr != nil {
+			c.logger.Warn("Retry returned 402 but client could not parse PAYMENT-REQUIRED", "error", parseErr)
+		} else {
+			retry.RetryError = retryPR.Error
+			if retryPR.Error != "" {
+				c.logger.Warn("Retry returned 402 PAYMENT-REQUIRED", "error", retryPR.Error)
+			}
+		}
+	}
 	c.logger.Info("Retry completed", "status", retry.Response.StatusCode)
 	return retry, nil
+}
+
+func (c *Client) applyEIP712DomainOverrides(reqs x402adapter.Requirements) (x402adapter.Requirements, bool) {
+	if c.domainName == "" && c.domainVer == "" {
+		return reqs, false
+	}
+	updated := reqs
+	if updated.Extra == nil {
+		updated.Extra = map[string]interface{}{}
+	} else {
+		copied := make(map[string]interface{}, len(updated.Extra))
+		for k, v := range updated.Extra {
+			copied[k] = v
+		}
+		updated.Extra = copied
+	}
+	updated.Extra["name"] = c.domainName
+	updated.Extra["version"] = c.domainVer
+	return updated, true
+}
+
+func extraString(extra map[string]interface{}, key string) string {
+	if extra == nil {
+		return ""
+	}
+	v, _ := extra[key].(string)
+	return v
 }
 
 // formatRejections builds a human-readable summary of all rejection reasons.
@@ -326,6 +381,9 @@ func FormatResult(result *RequestResult) string {
 	fmt.Fprintf(&b, "  Payment Required: %v\n", result.PaymentRequired)
 	fmt.Fprintf(&b, "  Payment Made:     %v\n", result.PaymentMade)
 	fmt.Fprintf(&b, "  Retried:          %v\n", result.Retried)
+	if result.RetryError != "" {
+		fmt.Fprintf(&b, "  Retry Error:      %s\n", result.RetryError)
+	}
 
 	if result.PaymentPayload != nil {
 		if payloadJSON, err := json.MarshalIndent(result.PaymentPayload, "  ", "  "); err == nil {

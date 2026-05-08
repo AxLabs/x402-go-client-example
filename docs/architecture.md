@@ -87,6 +87,10 @@ Key design decisions:
 2. **Composable**: Accepts signer, policy, and logger as dependencies
 3. **Testable**: All dependencies can be mocked
 4. **Observable**: Returns detailed results about the flow
+5. **Domain-correct signing**: For EIP-3009, the client signs against the
+	token-specific EIP-712 domain and supports explicit `name`/`version`
+	overrides when server metadata is incorrect; Permit2 uses its own contract
+	domain model
 
 ### `internal/payment/model/`
 

@@ -48,25 +48,43 @@ Set these in `.env`:
 - `CLIENT_PRIVATE_KEY` for real signing flows
 - Optional safety controls like `CLIENT_MAX_AMOUNT`, `CLIENT_ALLOWED_CHAIN_ID`, `CLIENT_ALLOWED_PAY_TO`
 
-4. Verify the server requirements without paying.
+Load `.env` into your current shell (required):
+
+```bash
+set -a
+source .env
+set +a
+```
+
+The CLI reads environment variables from the process environment. It does not auto-load `.env` by itself.
+
+4. (For real paid requests) use a funded test wallet.
+
+- `CLIENT_PRIVATE_KEY` must be the private key of the wallet you want to pay from.
+- The wallet must be funded with the asset/network accepted by the server's `accepts` options.
+- If the server example offers multiple options (for example Base Sepolia and Neo X), funding any accepted option can work.
+
+5. Verify the server requirements without paying.
 
 ```bash
 go run ./cmd/client inspect --url http://localhost:8080/paid/hello
 ```
 
-5. Run a payment flow request.
+6. Run a payment flow request.
 
 ```bash
 go run ./cmd/client get --url http://localhost:8080/paid/hello
 ```
 
-If configured correctly, you should see:
+If configured correctly for real payment (key loaded + funded wallet + server settlement working), you should see:
 
 - initial request
 - `402 Payment Required`
 - selected requirements
 - retry with payment header
 - final `200 OK`
+
+Without those prerequisites, `200 OK` is not expected.
 
 ## Useful Commands
 
@@ -88,6 +106,30 @@ Disable payment attempt entirely:
 go run ./cmd/client get --url http://localhost:8080/paid/hello --no-pay
 ```
 
+## Expected Outcomes by Mode
+
+`inspect`:
+
+- Always does a no-pay flow and stops at `402 Payment Required`
+- Useful to confirm what the server is asking for before attempting payment
+
+`get --dry-run`:
+
+- Parses and validates payment requirements, but does not sign or retry
+- Stays at `402 Payment Required`
+
+`get --no-pay`:
+
+- Does not attempt payment at all
+- Stays at `402 Payment Required`
+
+`get` (normal mode):
+
+- With `CLIENT_PRIVATE_KEY` exported and a compatible funded wallet, attempts sign + retry and can return `200 OK`
+- Without `CLIENT_PRIVATE_KEY`, payment signing is unavailable and paid flow cannot complete
+
+`Body: null` on a `402` response can still be valid. Some servers communicate requirements primarily through the `PAYMENT-REQUIRED` header while using an empty or null JSON body.
+
 POST example:
 
 ```bash
@@ -107,7 +149,7 @@ go run ./cmd/client version
 | `CLIENT_LOG_LEVEL` | Logging level (`debug`, `info`, `warn`, `error`) | `info` |
 | `CLIENT_LOG_JSON` | JSON log output | `false` |
 | `CLIENT_PRIVATE_KEY` | EVM private key for signing | - |
-| `CLIENT_MAX_AMOUNT` | Max allowed payment amount (smallest unit) | `1000000` |
+| `CLIENT_MAX_AMOUNT` | Max allowed payment amount (smallest unit). Empty means no cap. | - |
 | `CLIENT_ALLOWED_ASSET` | Comma-separated allowlist of assets | - |
 | `CLIENT_ALLOWED_CHAIN_ID` | Allowed chain/network ID (CAIP-2 or numeric) | - |
 | `CLIENT_ALLOWED_PAY_TO` | Comma-separated allowlist of recipients | - |
@@ -115,9 +157,81 @@ go run ./cmd/client version
 | `CLIENT_PREFERRED_ASSETS` | Preferred asset addresses, comma-separated | - |
 | `CLIENT_PREFERRED_TRANSFER_METHODS` | Preferred methods (`eip3009`, `permit2`) | - |
 | `CLIENT_SELECTION_STRATEGY` | `server-order` or `preference-first` | `server-order` |
+| `CLIENT_EIP712_DOMAIN_NAME` | Override EIP-712 domain `name` for EIP-3009 signing (token-specific) | - |
+| `CLIENT_EIP712_DOMAIN_VERSION` | Override EIP-712 domain `version` for EIP-3009 signing (token-specific) | - |
 | `CLIENT_TIMEOUT` | HTTP timeout | `30s` |
 | `CLIENT_DRY_RUN` | Parse 402 but do not sign/retry | `false` |
 | `CLIENT_NO_PAY` | Never attempt payment flow | `false` |
+
+For EIP-3009 (`transferWithAuthorization`), the signature domain is token-specific and must match the token contract's EIP-712 domain. In practice this means:
+
+- `name` and `version` must match the token's domain values
+- `chainId` must match the active network
+- `verifyingContract` must be the token contract address (`asset`)
+
+If the offered `requirements.extra.name/version` are wrong for the token, set both domain overrides to force signing with the token's actual domain values.
+
+Example (Neo X xGAS):
+
+```json
+{
+  "name": "Extended GAS",
+  "version": "1",
+  "chainId": 47763,
+  "verifyingContract": "<xgas contract address>"
+}
+```
+
+Set the client overrides for that token/domain:
+
+```bash
+CLIENT_EIP712_DOMAIN_NAME=Extended GAS
+CLIENT_EIP712_DOMAIN_VERSION=1
+```
+
+Permit2 note: Permit2 signatures are for the Permit2 contract domain rather than each ERC-20 token's own EIP-3009 domain. These two overrides are only applied to EIP-3009 signing paths.
+
+### Buyer Policy Configuration
+
+This is the core buyer control surface for deciding **what payments are allowed**.
+`CLIENT_MAX_AMOUNT` has no default; leave it empty for no amount ceiling, or set it explicitly to enforce a cap.
+
+How each payment option is evaluated:
+
+1. The server sends one or more `accepts` options.
+2. The client orders options based on `CLIENT_SELECTION_STRATEGY`.
+3. Each option is checked against local policy using `CLIENT_MAX_AMOUNT`, `CLIENT_ALLOWED_ASSET`, `CLIENT_ALLOWED_CHAIN_ID`, and `CLIENT_ALLOWED_PAY_TO`.
+4. The first option that passes policy is signed and retried.
+5. If none pass, payment is refused with per-option rejection reasons.
+
+Example: Strict allowlist (recommended for production buyers)
+
+```bash
+CLIENT_MAX_AMOUNT=<max_amount_smallest_unit>
+CLIENT_ALLOWED_CHAIN_ID=eip155:84532
+CLIENT_ALLOWED_ASSET=0x036CbD53842c5426634e7929541eC2318f3dCF7e
+CLIENT_ALLOWED_PAY_TO=0x1111111111111111111111111111111111111111
+CLIENT_SELECTION_STRATEGY=server-order
+```
+
+Example: Accept multiple sellers/assets, prefer one network/asset first
+
+```bash
+CLIENT_ALLOWED_CHAIN_ID=
+CLIENT_ALLOWED_ASSET=0x036CbD53842c5426634e7929541eC2318f3dCF7e,0xABCDEF0000000000000000000000000000000001
+CLIENT_ALLOWED_PAY_TO=0x1111111111111111111111111111111111111111,0x2222222222222222222222222222222222222222
+CLIENT_PREFERRED_NETWORKS=eip155:12227332,eip155:84532
+CLIENT_PREFERRED_ASSETS=0xABCDEF0000000000000000000000000000000001,0x036CbD53842c5426634e7929541eC2318f3dCF7e
+CLIENT_SELECTION_STRATEGY=preference-first
+```
+
+Example: Safe validation before enabling payment
+
+```bash
+go run ./cmd/client get --url http://localhost:8080/paid/hello --dry-run --verbose
+```
+
+Use this to verify exactly which option would be selected (and why others are rejected) before running paid mode.
 
 ### Multi-Option Selection
 
