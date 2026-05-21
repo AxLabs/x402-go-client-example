@@ -37,6 +37,11 @@ type Config struct {
 	// Request behavior
 	DryRun bool `json:"dryRun"` // Parse 402 but don't pay
 	NoPay  bool `json:"noPay"`  // Don't attempt payment flow
+
+	// RPCURL is the default EVM JSON-RPC endpoint for on-chain reads and
+	// Permit2 approve transactions. Per-network overrides use
+	// CLIENT_RPC_<NETWORK> (e.g. CLIENT_RPC_EIP155_84532).
+	RPCURL string `json:"rpcUrl"`
 }
 
 // DefaultConfig returns a configuration with sensible defaults.
@@ -122,7 +127,25 @@ func LoadFromEnv() (*Config, error) {
 		cfg.NoPay = parseBool(v)
 	}
 
+	if v := os.Getenv("CLIENT_RPC_URL"); v != "" {
+		cfg.RPCURL = strings.TrimSpace(v)
+	}
+
 	return cfg, nil
+}
+
+// RPCURLForNetwork returns the JSON-RPC URL for an EVM network.
+// Checks CLIENT_RPC_<NETWORK> (colons → underscores, uppercased) then CLIENT_RPC_URL.
+func RPCURLForNetwork(network string) string {
+	network = strings.TrimSpace(network)
+	if network == "" {
+		return strings.TrimSpace(os.Getenv("CLIENT_RPC_URL"))
+	}
+	key := "CLIENT_RPC_" + strings.ToUpper(strings.ReplaceAll(network, ":", "_"))
+	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+		return v
+	}
+	return strings.TrimSpace(os.Getenv("CLIENT_RPC_URL"))
 }
 
 // Validate checks if the configuration is valid.

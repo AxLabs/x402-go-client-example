@@ -12,6 +12,7 @@ import (
 
 	"github.com/bane-labs-org/x402-go-client-example/internal/config"
 	"github.com/bane-labs-org/x402-go-client-example/internal/httpclient"
+	"github.com/bane-labs-org/x402-go-client-example/internal/permit2"
 	"github.com/bane-labs-org/x402-go-client-example/internal/logging"
 	"github.com/bane-labs-org/x402-go-client-example/internal/payment/policy"
 	"github.com/bane-labs-org/x402-go-client-example/internal/payment/selection"
@@ -83,6 +84,13 @@ func (a *App) setup(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid configuration: %w", err)
 	}
 	a.config = cfg
+
+	// Respect CLIENT_TIMEOUT from the environment when the user did not pass --timeout.
+	timeoutFlag := cmd.PersistentFlags().Lookup("timeout")
+	if timeoutFlag != nil && !timeoutFlag.Changed {
+		a.timeout = cfg.Timeout
+	}
+
 	a.logger = logging.New(logging.Options{
 		Level:  logging.ParseLevel(cfg.LogLevel),
 		Output: os.Stderr,
@@ -209,15 +217,22 @@ func (a *App) executeRequest(method, url string, body []byte) error {
 	sel := selection.NewSelector(pol, prefs, strat)
 	a.printInfo("Selection Strategy", string(strat))
 
+	// Auto-approve Permit2 for permit2 payment options (one-time on-chain tx per token).
+	var permit2Prep *permit2.Preparer
+	if a.config.HasPrivateKey() {
+		permit2Prep = permit2.NewPreparer(a.config.PrivateKey, config.RPCURLForNetwork)
+	}
+
 	// Build orchestrator.
 	client := httpclient.New(httpclient.Options{
-		Timeout:  a.timeout,
-		Adapter:  adapter,
-		Policy:   pol,
-		Selector: sel,
-		Logger:   a.logger,
-		DryRun:   a.dryRun || a.config.DryRun,
-		NoPay:    a.noPay || a.config.NoPay,
+		Timeout:         a.timeout,
+		Adapter:         adapter,
+		Policy:          pol,
+		Selector:        sel,
+		Logger:          a.logger,
+		DryRun:          a.dryRun || a.config.DryRun,
+		NoPay:           a.noPay || a.config.NoPay,
+		Permit2Preparer: permit2Prep,
 	})
 
 	a.printStep("Making initial request")

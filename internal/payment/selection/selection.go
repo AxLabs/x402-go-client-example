@@ -163,18 +163,23 @@ func (s *Selector) preferenceScore(req *x402adapter.Requirements) int {
 	return score
 }
 
-// inferTransferMethod attempts to determine the transfer method from the
-// requirements. The x402 SDK exposes this via scheme or extra fields.
+// inferTransferMethod reads assetTransferMethod from requirements.Extra when set.
+// For scheme "exact" without extra, the protocol default is eip3009.
 func inferTransferMethod(req *x402adapter.Requirements) string {
 	if req == nil {
 		return ""
 	}
-	// The SDK may embed transfer method information in Extra or via the scheme.
-	// "exact" scheme on EVM typically implies eip3009 (transferWithAuthorization).
+	if req.Extra != nil {
+		if raw, ok := req.Extra["assetTransferMethod"]; ok {
+			if method, ok := raw.(string); ok && method != "" {
+				return strings.ToLower(method)
+			}
+		}
+	}
 	if strings.EqualFold(req.Scheme, "exact") {
 		return "eip3009"
 	}
-	return req.Scheme
+	return strings.ToLower(req.Scheme)
 }
 
 // stableSortByScore sorts candidates by descending score, preserving original

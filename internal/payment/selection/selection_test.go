@@ -84,6 +84,31 @@ func TestSelect_MultiOption_FirstFailsPolicy_SecondSucceeds(t *testing.T) {
 	}
 }
 
+func TestSelect_PreferenceFirst_PrefersPermit2WhenAdvertised(t *testing.T) {
+	pol := policy.DefaultPolicy()
+	prefs := Preferences{
+		TransferMethods: []string{"permit2", "eip3009"},
+	}
+	sel := NewSelector(pol, prefs, StrategyPreferenceFirst)
+
+	eip3009 := baseReqs("eip155:84532", "0xUSDC", "100000")
+	permit2 := baseReqs("eip155:84532", "0xZCHF", "1000000000000000000")
+	permit2.Extra = map[string]interface{}{"assetTransferMethod": "permit2"}
+
+	accepts := []x402adapter.Requirements{eip3009, permit2}
+
+	result := sel.Select(accepts)
+	if result.Selected == nil {
+		t.Fatal("expected selection")
+	}
+	if result.SelectedIndex != 1 {
+		t.Errorf("SelectedIndex = %d, want 1 (permit2 option)", result.SelectedIndex)
+	}
+	if inferTransferMethod(result.Selected) != "permit2" {
+		t.Errorf("transfer method = %q, want permit2", inferTransferMethod(result.Selected))
+	}
+}
+
 func TestSelect_MultiOption_EIP3009_Plus_Alternate(t *testing.T) {
 	// Two options: one ERC20 via eip3009 (exact scheme), one different network.
 	// Policy allows both networks, but prefers the ERC20 option via preferences.

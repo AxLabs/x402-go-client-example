@@ -23,6 +23,7 @@ import (
 	"github.com/bane-labs-org/x402-go-client-example/internal/logging"
 	"github.com/bane-labs-org/x402-go-client-example/internal/payment/policy"
 	"github.com/bane-labs-org/x402-go-client-example/internal/payment/selection"
+	"github.com/bane-labs-org/x402-go-client-example/internal/permit2"
 	"github.com/bane-labs-org/x402-go-client-example/internal/x402adapter"
 )
 
@@ -36,6 +37,8 @@ type Client struct {
 
 	dryRun bool
 	noPay  bool
+
+	permit2 *permit2.Preparer
 }
 
 // Options configures a Client.
@@ -47,6 +50,10 @@ type Options struct {
 	Logger   *logging.Logger
 	DryRun   bool
 	NoPay    bool
+
+	// Permit2Preparer ensures ERC-20 allowance to Permit2 before permit2 payments.
+	// Nil disables automatic approval (legacy behavior).
+	Permit2Preparer *permit2.Preparer
 }
 
 // DefaultOptions returns sensible defaults (no adapter: caller must set one
@@ -79,6 +86,7 @@ func New(opts Options) *Client {
 		logger:     opts.Logger.WithComponent("httpclient"),
 		dryRun:     opts.DryRun,
 		noPay:      opts.NoPay,
+		permit2:    opts.Permit2Preparer,
 	}
 }
 
@@ -211,6 +219,14 @@ func (c *Client) Do(ctx context.Context, req *Request) (*RequestResult, error) {
 	if c.dryRun {
 		c.logger.Info("Dry-run mode - not signing or retrying")
 		return result, nil
+	}
+
+	if c.permit2 != nil && permit2.RequiresPermit2(reqs) {
+		c.logger.Info("Ensuring Permit2 ERC-20 allowance (approve Permit2 if needed)", "asset", reqs.Asset, "network", reqs.Network)
+		if err := c.permit2.EnsureAllowance(ctx, reqs); err != nil {
+			return result, fmt.Errorf("permit2 allowance: %w", err)
+		}
+		c.logger.Info("Permit2 ERC-20 allowance ready", "asset", reqs.Asset)
 	}
 
 	payload, paymentHeaders, err := c.adapter.CreateAndEncodePayment(ctx, paymentRequired, reqs)
