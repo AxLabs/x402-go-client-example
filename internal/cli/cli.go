@@ -12,10 +12,10 @@ import (
 
 	"github.com/bane-labs-org/x402-go-client-example/internal/config"
 	"github.com/bane-labs-org/x402-go-client-example/internal/httpclient"
-	"github.com/bane-labs-org/x402-go-client-example/internal/permit2"
 	"github.com/bane-labs-org/x402-go-client-example/internal/logging"
 	"github.com/bane-labs-org/x402-go-client-example/internal/payment/policy"
 	"github.com/bane-labs-org/x402-go-client-example/internal/payment/selection"
+	"github.com/bane-labs-org/x402-go-client-example/internal/permit2"
 	"github.com/bane-labs-org/x402-go-client-example/internal/signer"
 	"github.com/bane-labs-org/x402-go-client-example/internal/version"
 	"github.com/bane-labs-org/x402-go-client-example/internal/x402adapter"
@@ -323,7 +323,7 @@ func (a *App) displayResult(result *httpclient.RequestResult) {
 	}
 
 	a.printStep("Final Response")
-	a.printInfo("Status", fmt.Sprintf("%d %s", result.Response.StatusCode, result.Response.Status))
+	a.printInfo("Status", fmt.Sprintf("%s", result.Response.Status))
 	a.printInfo("Content-Type", result.Response.Header.Get("Content-Type"))
 
 	fmt.Println()

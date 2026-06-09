@@ -32,7 +32,7 @@ Use both repos together to run a complete local example of `402 Payment Required
 2. Clone and build this client example.
 
 ```bash
-git clone https://github.com/bane-labs-org/x402-go-client-example.git
+git clone https://github.com/AxLabs/x402-go-client-example.git
 cd x402-go-client-example
 make build
 ```
@@ -160,6 +160,11 @@ go run ./cmd/client version
 | `CLIENT_TIMEOUT` | HTTP timeout | `30s` |
 | `CLIENT_DRY_RUN` | Parse 402 but do not sign/retry | `false` |
 | `CLIENT_NO_PAY` | Never attempt payment flow | `false` |
+| `CLIENT_RPC_URL` | Default EVM JSON-RPC URL for on-chain reads and Permit2 approvals | - |
+| `CLIENT_RPC_EIP155_<CHAIN_ID>` | Per-network JSON-RPC override, e.g. `CLIENT_RPC_EIP155_84532` | - |
+
+These defaults are the application's built-in defaults when no environment variable is set.
+The checked-in `.env.example` is an opinionated Base Sepolia / Neo X example profile, so some copied values intentionally differ from the empty built-in defaults above.
 
 ### Buyer Policy Configuration
 
@@ -223,6 +228,20 @@ CLIENT_SELECTION_STRATEGY=preference-first
 **Diagnostics:** The client logs all offered options, the selected option, and per-option rejection reasons for any rejected candidates. Use `--verbose` or `CLIENT_LOG_LEVEL=debug` to see full details.
 
 **CAIP-2 normalization:** Bare numeric chain IDs (e.g., `84532`) are automatically converted to CAIP-2 format (`eip155:84532`) in both `CLIENT_ALLOWED_CHAIN_ID` and `CLIENT_PREFERRED_NETWORKS`.
+
+### Permit2 and RPC Configuration
+
+Some payment options use `permit2` instead of `eip3009`. For Permit2 payments, the client may need to perform an on-chain allowance check and send an approval transaction before retrying the paid request.
+
+Set `CLIENT_RPC_URL` to a default EVM JSON-RPC endpoint, or set a per-network override using the CAIP-2 network converted to an environment variable suffix:
+
+```bash
+CLIENT_RPC_URL=https://sepolia.base.org
+CLIENT_RPC_EIP155_84532=https://sepolia.base.org
+CLIENT_RPC_EIP155_12227332=https://neoxt4seed1.ngd.network/
+```
+
+Per-network overrides take precedence over `CLIENT_RPC_URL`.
 
 ## CLI
 
@@ -320,7 +339,9 @@ x402-go-client-example/
 │   ├── httpclient/
 │   ├── logging/
 │   ├── payment/
-│   │   └── policy/
+│   │   ├── policy/
+│   │   └── selection/
+│   ├── permit2/
 │   ├── signer/
 │   ├── version/
 │   └── x402adapter/
